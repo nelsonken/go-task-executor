@@ -16,7 +16,7 @@ func main() {
 	}
 	var err error
 	ctx := context.Background()
-	executor := NewExecutor(map[string]Task{})
+	executor := NewExecutor(map[string]Task{}, 100)
 
 	results := map[string]TaskResult{}
 	err = executor.Execute(ctx, taskList, results)
@@ -27,15 +27,41 @@ func main() {
 	for _, v := range results {
 		fmt.Printf("%+v\n", v)
 	}
+
 	fmt.Println("---------------------------")
+
 	resultChan := make(chan TaskResult, len(taskList))
 	err = executor.ExecuteConcurrency(ctx, taskList, resultChan)
 	if err != nil {
 		fmt.Println(err)
 	}
+
 	for x := range resultChan {
 		fmt.Printf("%+v\n", x)
 	}
+
+	fmt.Println("---------------------------")
+
+	var cnt int
+	executor.StartPool()
+	resultChan2 := make(chan TaskResult, len(taskList))
+	cnt, err = executor.ExecuteConcurrencyWithPool(ctx, taskList, resultChan2)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	i := 0
+	for x := range resultChan2 {
+		i++
+		fmt.Printf("%+v\n", x)
+		if i >= cnt {
+			close(resultChan2)
+			break
+		}
+	}
+
+	executor.StopPool()
+
 }
 
 type TaskA struct {
@@ -54,14 +80,6 @@ func (t *TaskA) Do(ctx context.Context) (interface{}, error) {
 	return "a done", nil
 }
 
-func (t *TaskA) DepResultsChan() chan TaskResult {
-	if t.depResultChan == nil {
-		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
-	}
-
-	return t.depResultChan
-}
-
 type TaskB struct {
 	TaskBase
 }
@@ -76,14 +94,6 @@ func (t *TaskB) DepNames() []string {
 
 func (t *TaskB) Do(ctx context.Context) (interface{}, error) {
 	return "b done", nil
-}
-
-func (t *TaskB) DepResultsChan() chan TaskResult {
-	if t.depResultChan == nil {
-		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
-	}
-
-	return t.depResultChan
 }
 
 type TaskC struct {
@@ -102,14 +112,6 @@ func (t *TaskC) Do(ctx context.Context) (interface{}, error) {
 	return "c done", nil
 }
 
-func (t *TaskC) DepResultsChan() chan TaskResult {
-	if t.depResultChan == nil {
-		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
-	}
-
-	return t.depResultChan
-}
-
 type TaskD struct {
 	TaskBase
 }
@@ -124,12 +126,4 @@ func (t *TaskD) DepNames() []string {
 
 func (t *TaskD) Do(ctx context.Context) (interface{}, error) {
 	return "d done", nil
-}
-
-func (t *TaskD) DepResultsChan() chan TaskResult {
-	if t.depResultChan == nil {
-		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
-	}
-
-	return t.depResultChan
 }

@@ -12,6 +12,23 @@ func (t *TaskBase) Do(ctx context.Context) (interface{}, error) {
 }
 
 
+func (t *TaskBase) Name() string {
+	return "a"
+}
+
+func (t *TaskBase) DepNames() []string {
+	return []string{"b", "c", "d"}
+}
+
+
+func (t *TaskBase) DepResultsChan() chan TaskResult {
+	if t.depResultChan == nil {
+		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
+	}
+
+	return t.depResultChan
+}
+
 func (t *TaskBase) Children() []chan TaskResult {
 	return t.children
 }
