@@ -68,6 +68,7 @@ func (executor *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, 
 		}(task)
 	}
 	wg.Wait()
+	close(results)
 
 	return nil
 }
