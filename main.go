@@ -17,73 +17,57 @@ type Task struct {
 
 var registry = map[string]*Task{}
 
-func DoThings(xs []*Task) error {
-	// commonTask For common Data
-	var commonTasks = map[string]*Task{
-		"common_task_1": &Task{F: func(ctx context.Context) interface{} {
-			fmt.Println("common 1")
-			return "c1"
-		}, Name: "common1"},
-		"common_task_2": &Task{F: func(ctx context.Context) interface{} {
-			fmt.Println("common 2")
-			return "c2"
-		}, Name: "common2"},
-	}
+func DoThings(tasks []*Task) error {
 
-	var m = map[string]*Task{
-	}
+	var taskGraph = map[string]*Task{}
 
-	for k, v := range commonTasks {
-		m[k] = v
-	}
-
-	for _, x := range xs {
-		if len(x.DependNames) > 0 {
-			x.DependsResults = make(chan interface{}, len(x.DependNames)+1)
+	for _, task := range tasks {
+		if len(task.DependNames) > 0 {
+			task.DependsResults = make(chan interface{}, len(task.DependNames)+1)
 		}
 
-		m[x.Name] = x
+		taskGraph[task.Name] = task
 	}
 
-	for _, x := range xs {
-		for _, name := range x.DependNames {
-			xx, ok := m[name]
+	for _, task := range tasks {
+		for _, name := range task.DependNames {
+			depsTask, ok := taskGraph[name]
 			if ok {
-				if xx.Children == nil {
-					xx.Children = []chan interface{}{}
+				if depsTask.Children == nil {
+					depsTask.Children = []chan interface{}{}
 				}
 
-				xx.Children = append(xx.Children, x.DependsResults)
-			} else if xx, ok = registry[name]; ok {
-				if xx.Children == nil {
-					xx.Children = []chan interface{}{}
+				depsTask.Children = append(depsTask.Children, task.DependsResults)
+			} else if depsTask, ok = registry[name]; ok {
+				if depsTask.Children == nil {
+					depsTask.Children = []chan interface{}{}
 				}
 
-				xx.Children = append(xx.Children, x.DependsResults)
+				depsTask.Children = append(depsTask.Children, task.DependsResults)
 			} else {
-				// you can get from registry
+				// you can get from other place
 				return errors.New("dependency " + name + " not found")
 			}
 		}
 	}
 
 	wg := new(sync.WaitGroup)
-	for _, v := range m {
+	for _, task := range taskGraph {
 		wg.Add(1)
-		go func(v *Task) {
+		go func(task *Task) {
 			defer wg.Done()
 			ctx := context.Background()
 			deps := []interface{}{}
-			for i := len(v.DependNames); i > 0; i-- {
-				depData := <-v.DependsResults
+			for i := len(task.DependNames); i > 0; i-- {
+				depData := <-task.DependsResults
 				deps = append(deps, depData)
 			}
-			fmt.Printf("%s deps: %+v done", v.Name, deps)
-			data := v.F(ctx)
-			for _, ch := range v.Children {
+			fmt.Printf("%s deps: %+v task done", task.Name, deps)
+			data := task.F(ctx)
+			for _, ch := range task.Children {
 				ch <- data
 			}
-		}(v)
+		}(task)
 	}
 	wg.Wait()
 
@@ -112,7 +96,7 @@ func main() {
 				fmt.Println("c")
 				return 3
 			},
-			DependNames: []string{"d"},
+			DependNames: []string{},
 			Name:        "c",
 		},
 		{
