@@ -1,8 +1,9 @@
-package main
+package taskexecutor
 
 import (
 	"context"
-	"github.com/pkg/errors"
+	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -195,7 +196,7 @@ func (executor *Executor) doTask(tasks map[string]Task, ctx context.Context, res
 					if dep, ok2 := executor.registry[name]; ok2 {
 						tasks[name] = dep
 					} else {
-						return errors.Errorf("%s deps on %s not found", task.Name(), name)
+						return fmt.Errorf("%s deps on %s not found", task.Name(), name)
 					}
 				}
 

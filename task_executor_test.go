@@ -1,12 +1,12 @@
-package main
+package taskexecutor
 
 import (
 	"context"
 	"fmt"
+	"testing"
 )
 
-func main() {
-	//	testDemo()
+func TestExecutor_Execute(t *testing.T) {
 
 	taskList := []Task{
 		&TaskA{},
