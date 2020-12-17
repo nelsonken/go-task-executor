@@ -15,6 +15,8 @@ type Task struct {
 	Children       []chan interface{}
 }
 
+var registry = map[string]*Task{}
+
 func DoThings(xs []*Task) error {
 	// commonTask For common Data
 	var commonTasks = map[string]*Task{
@@ -52,7 +54,14 @@ func DoThings(xs []*Task) error {
 				}
 
 				xx.Children = append(xx.Children, x.DependsResults)
+			} else if xx, ok = registry[name]; ok {
+				if xx.Children == nil {
+					xx.Children = []chan interface{}{}
+				}
+
+				xx.Children = append(xx.Children, x.DependsResults)
 			} else {
+				// you can get from registry
 				return errors.New("dependency " + name + " not found")
 			}
 		}
