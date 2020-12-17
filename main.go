@@ -3,111 +3,133 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/pkg/errors"
-	"sync"
 )
 
-type Task struct {
-	F              func(ctx context.Context) interface{}
-	DependNames    []string
-	Name           string
-	DependsResults chan interface{}
-	Children       []chan interface{}
-}
-
-var registry = map[string]*Task{}
-
-func DoThings(tasks []*Task) error {
-
-	var taskGraph = map[string]*Task{}
-
-	for _, task := range tasks {
-		if len(task.DependNames) > 0 {
-			task.DependsResults = make(chan interface{}, len(task.DependNames)+1)
-		}
-
-		taskGraph[task.Name] = task
-	}
-
-	for _, task := range tasks {
-		for _, name := range task.DependNames {
-			depsTask, ok := taskGraph[name]
-			if ok {
-				if depsTask.Children == nil {
-					depsTask.Children = []chan interface{}{}
-				}
-
-				depsTask.Children = append(depsTask.Children, task.DependsResults)
-			} else if depsTask, ok = registry[name]; ok {
-				if depsTask.Children == nil {
-					depsTask.Children = []chan interface{}{}
-				}
-
-				depsTask.Children = append(depsTask.Children, task.DependsResults)
-			} else {
-				// you can get from other place
-				return errors.New("dependency " + name + " not found")
-			}
-		}
-	}
-
-	wg := new(sync.WaitGroup)
-	for _, task := range taskGraph {
-		wg.Add(1)
-		go func(task *Task) {
-			defer wg.Done()
-			ctx := context.Background()
-			deps := []interface{}{}
-			for i := len(task.DependNames); i > 0; i-- {
-				depData := <-task.DependsResults
-				deps = append(deps, depData)
-			}
-			fmt.Printf("%s deps: %+v task done", task.Name, deps)
-			data := task.F(ctx)
-			for _, ch := range task.Children {
-				ch <- data
-			}
-		}(task)
-	}
-	wg.Wait()
-
-	return nil
-
-}
-
 func main() {
-	var xs = []*Task{
-		{
-			F: func(ctx context.Context) interface{} {
-				return 1
-			},
-			DependNames: []string{"b", "d", "c"},
-			Name:        "a",
-		},
-		{
-			F: func(ctx context.Context) interface{} {
-				return 2
-			},
-			DependNames: []string{"c"},
-			Name:        "b",
-		},
-		{
-			F: func(ctx context.Context) interface{} {
-				fmt.Println("c")
-				return 3
-			},
-			DependNames: []string{},
-			Name:        "c",
-		},
-		{
-			F: func(ctx context.Context) interface{} {
-				fmt.Println("d")
-				return 4
-			},
-			DependNames: []string{},
-			Name:        "d",
-		},
+	//	testDemo()
+
+	taskList := []Task{
+		&TaskA{},
+		&TaskB{},
+		&TaskC{},
+		&TaskD{},
+	}
+	var err error
+	ctx := context.Background()
+	executor := NewExecutor(map[string]Task{})
+
+	results := map[string]TaskResult{}
+	err = executor.Execute(ctx, taskList, results)
+	if err != nil {
+		fmt.Println(err)
 	}
 
-	DoThings(xs)
+	for _, v := range results {
+		fmt.Printf("%+v\n", v)
+	}
+	fmt.Println("---------------------------")
+	resultChan := make(chan TaskResult, len(taskList))
+	err = executor.ExecuteConcurrency(ctx, taskList, resultChan)
+	if err != nil {
+		fmt.Println(err)
+	}
+	for x := range resultChan {
+		fmt.Printf("%+v\n", x)
+	}
+}
+
+type TaskA struct {
+	TaskBase
+}
+
+func (t *TaskA) Name() string {
+	return "a"
+}
+
+func (t *TaskA) DepNames() []string {
+	return []string{"b", "c", "d"}
+}
+
+func (t *TaskA) Do(ctx context.Context) (interface{}, error) {
+	return "a done", nil
+}
+
+func (t *TaskA) DepResultsChan() chan TaskResult {
+	if t.depResultChan == nil {
+		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
+	}
+
+	return t.depResultChan
+}
+
+type TaskB struct {
+	TaskBase
+}
+
+func (t *TaskB) Name() string {
+	return "b"
+}
+
+func (t *TaskB) DepNames() []string {
+	return []string{"c", "d"}
+}
+
+func (t *TaskB) Do(ctx context.Context) (interface{}, error) {
+	return "b done", nil
+}
+
+func (t *TaskB) DepResultsChan() chan TaskResult {
+	if t.depResultChan == nil {
+		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
+	}
+
+	return t.depResultChan
+}
+
+type TaskC struct {
+	TaskBase
+}
+
+func (t *TaskC) Name() string {
+	return "c"
+}
+
+func (t *TaskC) DepNames() []string {
+	return []string{}
+}
+
+func (t *TaskC) Do(ctx context.Context) (interface{}, error) {
+	return "c done", nil
+}
+
+func (t *TaskC) DepResultsChan() chan TaskResult {
+	if t.depResultChan == nil {
+		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
+	}
+
+	return t.depResultChan
+}
+
+type TaskD struct {
+	TaskBase
+}
+
+func (t *TaskD) Name() string {
+	return "d"
+}
+
+func (t *TaskD) DepNames() []string {
+	return []string{"c"}
+}
+
+func (t *TaskD) Do(ctx context.Context) (interface{}, error) {
+	return "d done", nil
+}
+
+func (t *TaskD) DepResultsChan() chan TaskResult {
+	if t.depResultChan == nil {
+		t.depResultChan = make(chan TaskResult, len(t.DepNames()))
+	}
+
+	return t.depResultChan
 }
