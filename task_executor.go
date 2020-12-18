@@ -241,7 +241,7 @@ func (ex *Executor) doTask(tasks map[string]Task, ctx context.Context, results m
 		}
 	}
 
-	if len(tasks) > 0 {
+	if len(undoTasks) > 0 {
 		err := ex.doTask(undoTasks, ctx, results)
 		if err != nil {
 			return err
