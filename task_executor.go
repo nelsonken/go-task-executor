@@ -7,10 +7,12 @@ import (
 	"sync"
 )
 
+
 type jobStruct struct {
-	t   Task
-	ch  chan TaskResult
-	ctx context.Context
+	t          Task
+	ch         chan TaskResult
+	ctx        context.Context
+	needResult bool
 }
 
 // Executor Concurrency / Normal TaskExecutor, can Auto Resolve Deps
@@ -28,16 +30,16 @@ func NewExecutor(registry map[string]Task, poolSize int) *Executor {
 	return &Executor{registry: registry, jobCh: jobCh, poolSize: poolSize, locker: new(sync.Mutex)}
 }
 
-func (executor *Executor) StartPool() {
-	executor.locker.Lock()
-	defer executor.locker.Unlock()
-	if executor.poolStarted {
+func (ex *Executor) StartPool() {
+	ex.locker.Lock()
+	defer ex.locker.Unlock()
+	if ex.poolStarted {
 		return
 	}
 
-	for i := executor.poolSize; i > 0; i-- {
+	for i := ex.poolSize; i > 0; i-- {
 		go func() {
-			for job := range executor.jobCh {
+			for job := range ex.jobCh {
 				var deps []TaskResult
 
 				for i := len(job.t.DepNames()); i > 0; i-- {
@@ -53,7 +55,9 @@ func (executor *Executor) StartPool() {
 					Err:  err,
 				}
 
-				job.ch <- r
+				if job.needResult {
+					job.ch <- r
+				}
 
 				for _, ch := range job.t.Children() {
 					ch <- r
@@ -61,23 +65,23 @@ func (executor *Executor) StartPool() {
 			}
 		}()
 	}
-	executor.poolStarted = true
+
+	ex.poolStarted = true
 }
 
-func (executor *Executor) StopPool() {
-	executor.locker.Lock()
-	defer executor.locker.Unlock()
-	close(executor.jobCh)
+func (ex *Executor) StopPool() {
+	ex.locker.Lock()
+	defer ex.locker.Unlock()
+	close(ex.jobCh)
 }
 
-func (executor *Executor) ExecuteConcurrencyWithPool(ctx context.Context, tasks []Task, results chan TaskResult) (int, error) {
-	if !executor.poolStarted {
-		return 0, errors.New("pool not started")
+func (ex *Executor) ExecuteConcurrencyWithPool(ctx context.Context, tasks []Task, results chan TaskResult) error {
+	if !ex.poolStarted {
+		return errors.New("pool not started")
 	}
 
-	taskCount := len(tasks)
 	var taskGraph = map[string]Task{}
-
+	var noNeedResult = map[string]struct{}{}
 	for _, task := range tasks {
 		taskGraph[task.Name()] = task
 	}
@@ -87,31 +91,33 @@ func (executor *Executor) ExecuteConcurrencyWithPool(ctx context.Context, tasks 
 			depsTask, ok := taskGraph[name]
 			if ok {
 				depsTask.AddChild(task.DepResultsChan())
-			} else if depsTask, ok = executor.registry[name]; ok {
-				taskGraph[depsTask.Name()] = depsTask
+			} else if depsTask, ok = ex.registry[name]; ok {
+				noNeedResult[depsTask.Name()] = struct{}{}
+				taskGraph[name] = depsTask
 				depsTask.AddChild(task.DepResultsChan())
-				taskCount += 1
 			} else {
 				// you can get from other place
-				return 0, errors.New("dependency " + name + " not found")
+				return errors.New("dependency " + name + " not found")
 			}
 		}
 	}
 
 	for _, task := range taskGraph {
-		executor.jobCh <- jobStruct{
-			t:   task,
-			ch:  results,
-			ctx: ctx,
+		_, noNeedRes := noNeedResult[task.Name()]
+		ex.jobCh <- jobStruct{
+			t:          task,
+			ch:         results,
+			ctx:        ctx,
+			needResult: !noNeedRes,
 		}
 	}
 
-	return taskCount, nil
+	return nil
 }
 
-func (executor *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, results chan TaskResult) error {
+func (ex *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, results chan TaskResult) error {
 	var taskGraph = map[string]Task{}
-
+	var noNeedResult = map[string]struct{}{}
 	for _, task := range tasks {
 		taskGraph[task.Name()] = task
 	}
@@ -121,7 +127,8 @@ func (executor *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, 
 			depsTask, ok := taskGraph[name]
 			if ok {
 				depsTask.AddChild(task.DepResultsChan())
-			} else if depsTask, ok = executor.registry[name]; ok {
+			} else if depsTask, ok = ex.registry[name]; ok {
+				noNeedResult[depsTask.Name()] = struct{}{}
 				taskGraph[depsTask.Name()] = depsTask
 				depsTask.AddChild(task.DepResultsChan())
 			} else {
@@ -134,6 +141,7 @@ func (executor *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, 
 	wg := new(sync.WaitGroup)
 	for _, task := range taskGraph {
 		wg.Add(1)
+
 		go func(task Task) {
 			defer wg.Done()
 
@@ -155,7 +163,9 @@ func (executor *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, 
 				Err:  err,
 			}
 
-			results <- r
+			if _, ok := noNeedResult[task.Name()]; !ok {
+				results <- r
+			}
 
 			for _, ch := range task.Children() {
 				ch <- r
@@ -167,17 +177,17 @@ func (executor *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, 
 	return nil
 }
 
-func (executor *Executor) Execute(ctx context.Context, taskList []Task, results map[string]TaskResult) error {
+func (ex *Executor) Execute(ctx context.Context, taskList []Task, results map[string]TaskResult) error {
 	var tasks = map[string]Task{}
 
 	for _, task := range taskList {
 		tasks[task.Name()] = task
 	}
 
-	return executor.doTask(tasks, ctx, results)
+	return ex.doTask(tasks, ctx, results)
 }
 
-func (executor *Executor) doTask(tasks map[string]Task, ctx context.Context, results map[string]TaskResult) error {
+func (ex *Executor) doTask(tasks map[string]Task, ctx context.Context, results map[string]TaskResult) error {
 	undoTasks := map[string]Task{}
 	for _, task := range tasks {
 		// well ! no deps
@@ -188,17 +198,16 @@ func (executor *Executor) doTask(tasks map[string]Task, ctx context.Context, res
 				Data: i,
 				Err:  err,
 			}
-
 		} else {
 			var deps []TaskResult
 			for _, name := range task.DepNames() {
-				_, ok0 := results[name]
-				_, ok1 := tasks[name]
-				if !ok0 && !ok1 {
-					if dep, ok2 := executor.registry[name]; ok2 {
+				_, inResult := results[name]
+				_, inTasks := tasks[name]
+				if !inResult && !inTasks {
+					if dep, inRegistry := ex.registry[name]; inRegistry {
 						tasks[name] = dep
 					} else {
-						return fmt.Errorf("%s deps on %s not found", task.Name(), name)
+						return errors.Errorf("%s deps on %s not found", task.Name(), name)
 					}
 				}
 
@@ -208,8 +217,8 @@ func (executor *Executor) doTask(tasks map[string]Task, ctx context.Context, res
 				}
 			}
 
-			// deps not enough!
 			if len(deps) < len(task.DepNames()) {
+				// deps not enough!
 				undoTasks[task.Name()] = task
 			} else {
 				if _, ok := undoTasks[task.Name()]; ok {
@@ -220,7 +229,9 @@ func (executor *Executor) doTask(tasks map[string]Task, ctx context.Context, res
 				for _, dep := range deps {
 					ctx = context.WithValue(ctx, dep.GetName(), dep)
 				}
+
 				i, err := task.Do(ctx)
+
 				results[task.Name()] = &Result{
 					Name: task.Name(),
 					Data: i,
@@ -231,7 +242,7 @@ func (executor *Executor) doTask(tasks map[string]Task, ctx context.Context, res
 	}
 
 	if len(tasks) > 0 {
-		err := executor.doTask(undoTasks, ctx, results)
+		err := ex.doTask(undoTasks, ctx, results)
 		if err != nil {
 			return err
 		}
@@ -271,3 +282,4 @@ func (r *Result) GetData() interface{} {
 func (r *Result) GetError() error {
 	return r.Err
 }
+
