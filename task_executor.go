@@ -88,6 +88,7 @@ func (executor *Executor) ExecuteConcurrencyWithPool(ctx context.Context, tasks 
 			if ok {
 				depsTask.AddChild(task.DepResultsChan())
 			} else if depsTask, ok = executor.registry[name]; ok {
+				taskGraph[depsTask.Name()] = depsTask
 				depsTask.AddChild(task.DepResultsChan())
 				taskCount += 1
 			} else {
@@ -121,6 +122,7 @@ func (executor *Executor) ExecuteConcurrency(ctx context.Context, tasks []Task, 
 			if ok {
 				depsTask.AddChild(task.DepResultsChan())
 			} else if depsTask, ok = executor.registry[name]; ok {
+				taskGraph[depsTask.Name()] = depsTask
 				depsTask.AddChild(task.DepResultsChan())
 			} else {
 				// you can get from other place
