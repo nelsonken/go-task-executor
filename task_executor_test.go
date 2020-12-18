@@ -11,12 +11,13 @@ func TestExecutor_Execute(t *testing.T) {
 	taskList := []Task{
 		&TaskA{},
 		&TaskB{},
-		&TaskC{},
 		&TaskD{},
+		//&TaskC{},
 	}
+
 	var err error
 	ctx := context.Background()
-	executor := NewExecutor(map[string]Task{}, 100)
+	executor := NewExecutor(map[string]Task{"c": &TaskC{}}, 100)
 
 	results := map[string]TaskResult{}
 	err = executor.Execute(ctx, taskList, results)
@@ -42,10 +43,9 @@ func TestExecutor_Execute(t *testing.T) {
 
 	fmt.Println("---------------------------")
 
-	var cnt int
 	executor.StartPool()
 	resultChan2 := make(chan TaskResult, len(taskList))
-	cnt, err = executor.ExecuteConcurrencyWithPool(ctx, taskList, resultChan2)
+	err = executor.ExecuteConcurrencyWithPool(ctx, taskList, resultChan2)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -54,7 +54,7 @@ func TestExecutor_Execute(t *testing.T) {
 	for x := range resultChan2 {
 		i++
 		fmt.Printf("%+v\n", x)
-		if i >= cnt {
+		if i >= len(taskList) {
 			close(resultChan2)
 			break
 		}
