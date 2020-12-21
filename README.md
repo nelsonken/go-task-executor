@@ -1,5 +1,7 @@
-# go-DAG-task-executor
-Task Executor With DAG Dependency
+# Golang DAG Like Task Executor
+
+![alt DAG](dag.jpg "DAG")
+
 ```
 We will do  task1 dependent another task2,
 then task2 dep task3,
