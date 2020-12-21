@@ -1,25 +1,35 @@
-package taskexecutor
+package executor
 
-import "context"
+import (
+	"context"
+	"github.com/pkg/errors"
+)
 
 type TaskBase struct {
 	depResultChan chan TaskResult
 	children      []chan TaskResult
+	input         interface{}
+}
+
+func (t *TaskBase) Name() string {
+	return "not implements"
+}
+
+func (t *TaskBase) GetInput() interface{} {
+	return t.input
+}
+
+func (t *TaskBase) SetInput(i interface{}) {
+	t.input = i
 }
 
 func (t *TaskBase) Do(ctx context.Context) (interface{}, error) {
-	return " done", nil
-}
-
-
-func (t *TaskBase) Name() string {
-	return "a"
+	return nil, errors.New("not implement")
 }
 
 func (t *TaskBase) DepNames() []string {
-	return []string{"b", "c", "d"}
+	return []string{}
 }
-
 
 func (t *TaskBase) DepResultsChan() chan TaskResult {
 	if t.depResultChan == nil {
